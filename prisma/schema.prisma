@@ -403,9 +403,9 @@ model Role {
   hierarchyPath  String  @map("hierarchy_path") @db.Text
 
   // Status and metadata
-  isRoot             Boolean @default(false) @map("is_root")
-  permissions        Json?   @db.Json // Cache of computed permissions
-  canManageWhitelist Boolean @default(false)
+  isRoot        Boolean @default(false) @map("is_root")
+  permissions   Json?   @db.Json // Cache of computed permissions
+  isIpWhitelist Boolean @default(false) @map("is_ipwhitelist")
 
   createdByType   CreatorType @map("created_by_type")
   createdByUserId String?     @map("created_by_user_id")
