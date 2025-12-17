@@ -39,7 +39,7 @@ model Business {
 
 model User {
   id             String     @id @default(uuid())
-  customerId     String     @unique @map("customer_id") @db.VarChar(8)
+  customerId     String?     @unique @map("customer_id") @db.VarChar(8)
   authUserId     String     @unique @map("auth_user_id")
   firstName      String     @map("first_name")
   lastName       String     @map("last_name")
@@ -52,7 +52,7 @@ model User {
   hierarchyPath  String     @map("hierarchy_path")
   status         UserStatus @default(INACTIVE)
   isKycVerified  Boolean    @default(false) @map("is_kyc_verified")
-  roleId         String     @map("role_id")
+  roleId         String?    @map("role_id")
 
   emailVerifiedAt DateTime? @map("email_verified_at")
   lastLoginAt     DateTime? @map("last_login_at")
@@ -72,7 +72,7 @@ model User {
   businessId String?   @map("business_id")
   business   Business? @relation(fields: [businessId], references: [id])
 
-  role     Role   @relation(fields: [roleId], references: [id])
+  role     Role?  @relation(fields: [roleId], references: [id])
   parent   User?  @relation("UserHierarchy", fields: [parentId], references: [id])
   children User[] @relation("UserHierarchy")
 
@@ -979,15 +979,15 @@ model IdempotencyKey {
 // ==================== AUDIT SYSTEM ====================
 
 model AuditLog {
-  id             String @id @default(uuid())
-  performerType  String @map("performer_type")
-  performerId    String @map("performer_id")
-  targetUserType String @map("target_user_type")
-  targetUserId   String @map("target_user_id")
-  action         String @db.VarChar(100)
-  description    String @db.Text
-  resourceType   String @map("resource_type") @db.VarChar(50)
-  resourceId     String @map("resource_id")
+  id             String  @id @default(uuid())
+  performerType  String  @map("performer_type")
+  performerId    String? @map("performer_id")
+  targetUserType String  @map("target_user_type")
+  targetUserId   String  @map("target_user_id")
+  action         String  @db.VarChar(100)
+  description    String  @db.Text
+  resourceType   String  @map("resource_type") @db.VarChar(50)
+  resourceId     String  @map("resource_id")
 
   // Business boundary - NULL for system actions
   businessId String?   @map("business_id")
@@ -1012,6 +1012,7 @@ model AuditLog {
 }
 
 // ==================== ENUMS ====================
+
 enum SmtpProvider {
   GMAIL
   OUTLOOK
