@@ -78,7 +78,6 @@ model User {
 
   wallets      Wallet[]
   bankDetails  BankDetail[]
-  userKyc      UserKyc?
   businessKyc  BusinessKyc?  @relation(fields: [businessKycId], references: [id])
   transactions Transaction[]
 
@@ -615,15 +614,14 @@ model ApiIntegration {
 // ==================== KYC & ADDRESS SYSTEM ====================
 
 model UserKyc {
-  id         String        @id @default(uuid())
-  userId     String        @unique @map("user_id")
-  firstName  String        @map("first_name") @db.VarChar(100)
-  lastName   String        @map("last_name") @db.VarChar(100)
-  fatherName String        @map("father_name") @db.VarChar(100)
+  id         String      @id @default(uuid())
+  firstName  String      @map("first_name") @db.VarChar(100)
+  lastName   String      @map("last_name") @db.VarChar(100)
+  fatherName String      @map("father_name") @db.VarChar(100)
   dob        DateTime
   gender     UserGender
-  status     UserKycStatus @default(PENDING)
-  type       UserKycType   @default(USER_KYC)
+  status     KycStatus   @default(PENDING)
+  type       UserKycType @default(USER_KYC)
 
   actionReason String?   @map("action_reason") @db.Text
   actionedAt   DateTime? @map("actioned_at")
@@ -641,7 +639,6 @@ model UserKyc {
   updatedAt        DateTime  @updatedAt @map("updated_at")
   deletedAt        DateTime? @map("deleted_at")
 
-  user        User         @relation(fields: [userId], references: [id])
   address     Address      @relation(fields: [addressId], references: [id])
   piiConsents PiiConsent[]
   businessKyc BusinessKyc? @relation(fields: [businessKycId], references: [id])
@@ -657,7 +654,6 @@ model UserKyc {
   verifiedByEmployeeId String?
   verifiedByEmployee   Employee? @relation("UserKycVerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
 
-  @@index([userId])
   @@index([businessKycId])
   @@index([status])
   @@index([verifiedByUserId])
@@ -1127,14 +1123,6 @@ enum UserGender {
 }
 
 enum KycStatus {
-  UNDER_REVIEW
-  PENDING
-  VERIFIED
-  REJECTED
-  SUSPENDED
-}
-
-enum UserKycStatus {
   UNDER_REVIEW
   PENDING
   VERIFIED
