@@ -1,4 +1,3 @@
-
 generator client {
   provider      = "prisma-client"
   output        = "../generated/prisma"
@@ -99,17 +98,19 @@ model User {
   serviceProvidersAssigned  ServiceProvider[]   @relation("ServiceProviderAssignedByUser")
   systemSettings            SystemSetting[]
 
-  userKycVerified       UserKyc[]        @relation("UserKycVerifiedByUser")
-  businessKycVerified   BusinessKyc[]    @relation("BusinessKycVerifiedByUser")
-  apiIntegrations       ApiIntegration[]
-  userPermissions       UserPermission[]
-  businessKycsSubmitted BusinessKyc[]    @relation("BusinessKycSubmittedByUser")
+  UserKycSubmittedByUser UserKyc[]        @relation("UserKycSubmittedByUser")
+  UserKycVerifiedByUser  UserKyc[]        @relation("UserKycVerifiedByUser")
+  apiIntegrations        ApiIntegration[]
+  userPermissions        UserPermission[]
+  businessKycVerified    BusinessKyc[]    @relation("BusinessKycVerifiedByUser")
+  businessKycsSubmitted  BusinessKyc[]    @relation("BusinessKycSubmittedByUser")
 
   name          String
-  emailVerified Boolean   @default(false)
+  emailVerified Boolean     @default(false)
   image         String?
   sessions      Session[]
   accounts      Account[]
+  smtpConfig    SmtpConfig?
 
   @@index([parentId])
   @@index([hierarchyLevel])
@@ -149,11 +150,12 @@ model Employee {
   businessId String   @map("business_id")
   business   Business @relation(fields: [businessId], references: [id])
 
-  department          Department           @relation(fields: [departmentId], references: [id])
-  createdBy           User                 @relation(fields: [createdById], references: [id])
-  commissionSettings  CommissionSetting[]  @relation("CommissionSettingCreatedByEmployee")
-  businessKycVerified BusinessKyc[]        @relation("BusinessKycVerifiedByEmployee")
-  employeePermissions EmployeePermission[]
+  department                Department           @relation(fields: [departmentId], references: [id])
+  createdBy                 User                 @relation(fields: [createdById], references: [id])
+  commissionSettings        CommissionSetting[]  @relation("CommissionSettingCreatedByEmployee")
+  businessKycVerified       BusinessKyc[]        @relation("BusinessKycVerifiedByEmployee")
+  UserKycVerifiedByEmployee UserKyc[]            @relation("UserKycVerifiedByEmployee")
+  employeePermissions       EmployeePermission[]
 
   @@index([departmentId])
   @@index([createdById])
@@ -613,35 +615,47 @@ model ApiIntegration {
 // ==================== KYC & ADDRESS SYSTEM ====================
 
 model UserKyc {
-  id                 String        @id @default(uuid())
-  userId             String        @unique @map("user_id")
-  firstName          String        @map("first_name") @db.VarChar(100)
-  lastName           String        @map("last_name") @db.VarChar(100)
-  fatherName         String        @map("father_name") @db.VarChar(100)
-  dob                DateTime
-  gender             UserGender
-  status             UserKycStatus @default(PENDING)
-  type               UserKycType   @default(USER_KYC)
-  kycRejectionReason String?       @map("kyc_rejection_reason") @db.Text
-  addressId          String        @map("address_id")
-  panFile            String        @map("pan_file") @db.VarChar(500)
-  aadhaarFile        String        @map("aadhaar_file") @db.VarChar(500)
-  addressProofFile   String        @map("address_proof_file") @db.VarChar(500)
-  photo              String        @db.VarChar(500)
-  roleType           RoleType      @default(PROPRIETOR) @map("role_type")
-  businessKycId      String?       @map("business_kyc_id")
-  verifiedByType     String?       @map("verified_by_type")
-  verifiedByUserId   String?       @map("verified_by_user_id")
-  verifiedAt         DateTime?     @map("verified_at")
-  createdAt          DateTime      @default(now()) @map("created_at")
-  updatedAt          DateTime      @updatedAt @map("updated_at")
-  deletedAt          DateTime?     @map("deleted_at")
+  id         String        @id @default(uuid())
+  userId     String        @unique @map("user_id")
+  firstName  String        @map("first_name") @db.VarChar(100)
+  lastName   String        @map("last_name") @db.VarChar(100)
+  fatherName String        @map("father_name") @db.VarChar(100)
+  dob        DateTime
+  gender     UserGender
+  status     UserKycStatus @default(PENDING)
+  type       UserKycType   @default(USER_KYC)
 
-  user           User         @relation(fields: [userId], references: [id])
-  address        Address      @relation(fields: [addressId], references: [id])
-  piiConsents    PiiConsent[]
-  businessKyc    BusinessKyc? @relation(fields: [businessKycId], references: [id])
-  verifiedByUser User?        @relation("UserKycVerifiedByUser", fields: [verifiedByUserId], references: [id])
+  actionReason String?   @map("action_reason") @db.Text
+  actionedAt   DateTime? @map("actioned_at")
+
+  addressId        String    @map("address_id")
+  panFile          String    @map("pan_file") @db.VarChar(500)
+  aadhaarFile      String    @map("aadhaar_file") @db.VarChar(500)
+  addressProofFile String    @map("address_proof_file") @db.VarChar(500)
+  photo            String    @db.VarChar(500)
+  roleType         RoleType  @default(PROPRIETOR) @map("role_type")
+  businessKycId    String?   @map("business_kyc_id")
+  verifiedByType   String?   @map("verified_by_type")
+  verifiedAt       DateTime? @map("verified_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+  address     Address      @relation(fields: [addressId], references: [id])
+  piiConsents PiiConsent[]
+  businessKyc BusinessKyc? @relation(fields: [businessKycId], references: [id])
+
+  //  This is a MANY-TO-ONE relationship, not one-to-one
+  submittedByUserId String
+  submittedByUser   User   @relation("UserKycSubmittedByUser", fields: [submittedByUserId], references: [id])
+
+  //  These are optional one-to-many relationships
+  verifiedByUserId String?
+  verifiedByUser   User?   @relation("UserKycVerifiedByUser", fields: [verifiedByUserId], references: [id])
+
+  verifiedByEmployeeId String?
+  verifiedByEmployee   Employee? @relation("UserKycVerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
 
   @@index([userId])
   @@index([businessKycId])
@@ -654,17 +668,23 @@ model UserKyc {
 }
 
 model BusinessKyc {
-  id      String    @id @default(uuid())
-  status  KycStatus @default(PENDING)
-  panFile String
-  gstFile String?
-  cin     String?
-  moaFile String?
-  aoaFile String?
+  id                String    @id @default(uuid())
+  status            KycStatus @default(PENDING)
+  panFile           String
+  gstFile           String?
+  cin               String?
+  moaFile           String?
+  aoaFile           String?
+  brDoc             String?   @map("br_doc") @db.VarChar(500)
+  partnershipDeed   String?   @map("partnership_deed") @db.VarChar(500)
+  partnerKycNumbers Int?      @map("partner_kyc_numbers")
 
-  rejectionReason String?
-  verifiedByType  CreatorType?
-  verifiedAt      DateTime?
+  actionReason   String?      @map("action_reason") @db.Text
+  actionedAt     DateTime?    @map("actioned_at")
+  verifiedByType CreatorType?
+
+  directorsCount       Int     @map("directors_count")
+  directorShareholding String? @map("director_shareholding_file") @db.VarChar(500)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -675,11 +695,11 @@ model BusinessKyc {
   addressId String
   address   Address @relation(fields: [addressId], references: [id])
 
-  // ✅ This is a MANY-TO-ONE relationship, not one-to-one
+  //  This is a MANY-TO-ONE relationship, not one-to-one
   submittedByUserId String
   submittedByUser   User   @relation("BusinessKycSubmittedByUser", fields: [submittedByUserId], references: [id])
 
-  // ✅ These are optional one-to-many relationships
+  //  These are optional one-to-many relationships
   verifiedByUserId String?
   verifiedByUser   User?   @relation("BusinessKycVerifiedByUser", fields: [verifiedByUserId], references: [id])
 
@@ -745,6 +765,36 @@ model Address {
   @@index([stateId])
   @@index([pinCode])
   @@map("addresses")
+}
+
+model SmtpConfig {
+  id     String @id @default(uuid())
+  userId String @unique @map("user_id")
+
+  provider SmtpProvider
+  host     String
+  port     Int
+  secure   Boolean
+
+  username    String
+  passwordEnc String @map("password_enc")
+
+  fromEmail String  @map("from_email")
+  fromName  String? @map("from_name")
+
+  supportEmail String @map("support_email")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([provider])
+  @@index([isActive])
+  @@map("smtp_configs")
 }
 
 // ==================== API & WEBHOOK SYSTEM ====================
@@ -839,28 +889,32 @@ model IpWhitelist {
 }
 
 model SystemSetting {
-  id             String  @id @default(uuid())
-  companyName    String?
-  companyLogo    String?
-  favIcon        String?
-  phoneNumber    String?
-  whatsappNumber String?
-  companyEmail   String?
-  facebookUrl    String?
-  instagramUrl   String?
-  twitterUrl     String?
-  linkedinUrl    String?
-  websiteUrl     String?
-  settings       Json?
+  id String @id @default(uuid())
 
-  userId    String
-  updatedBy String
-  user      User   @relation(fields: [userId], references: [id])
+  companyName String? @map("company_name")
+  companyLogo String? @map("company_logo")
+  favIcon     String? @map("fav_icon")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  phoneNumber    String? @map("phone_number")
+  whatsappNumber String? @map("whatsapp_number")
+  companyEmail   String? @map("company_email")
 
-  @@unique([userId])
+  facebookUrl  String? @map("facebook_url")
+  instagramUrl String? @map("instagram_url")
+  twitterUrl   String? @map("twitter_url")
+  linkedinUrl  String? @map("linkedin_url")
+  websiteUrl   String? @map("website_url")
+
+  settings Json? @map("settings")
+
+  userId    String @unique @map("user_id")
+  updatedBy String @map("updated_by")
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   @@map("system_settings")
 }
 
@@ -958,6 +1012,13 @@ model AuditLog {
 }
 
 // ==================== ENUMS ====================
+enum SmtpProvider {
+  GMAIL
+  OUTLOOK
+  CUSTOM
+  SES
+  SENDGRID
+}
 
 enum UserStatus {
   ACTIVE
