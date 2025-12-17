@@ -1,6 +1,5 @@
 import { IsString, IsOptional, IsEnum, IsObject, IsIP } from 'class-validator';
-import { Prisma } from 'generated/prisma/client';
-import { AuditStatus } from 'src/common/enums/audit.enum';
+import { AuditStatus, Prisma } from '../../../generated/prisma/client';
 
 export class CreateAuditLogDto {
   performerType: string;

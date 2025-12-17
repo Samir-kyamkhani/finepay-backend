@@ -9,31 +9,20 @@ import { PrismaService } from '../../database/prisma-service';
 import { Prisma } from '../../../generated/prisma/client';
 
 @Injectable()
-export class AuditService {
-  private readonly logger = new Logger(AuditService.name);
+export class AuditLogService {
+  private readonly logger = new Logger(AuditLogService.name);
 
   constructor(private readonly prisma: PrismaService) {}
   // Create Audit Log
 
-  async create(dto: CreateAuditLogDto) {
+  async create(dto: CreateAuditLogDto, tx?: Prisma.TransactionClient) {
+    const prisma = tx ?? this.prisma;
+
     try {
-      return await this.prisma.auditLog.create({
-        data: {
-          ...dto,
-        },
+      return await prisma.auditLog.create({
+        data: dto,
       });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Unknown error occurred audit log entry';
-
-      this.logger.error('Failed to create audit log entry', {
-        message,
-        dto,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-
+    } catch (error) {
       throw new InternalServerErrorException(
         'Failed to create audit log entry',
       );

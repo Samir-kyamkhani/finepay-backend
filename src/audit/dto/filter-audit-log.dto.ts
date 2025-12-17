@@ -7,7 +7,7 @@ import {
   IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AuditStatus } from 'src/common/enums/audit.enum';
+import { AuditStatus } from '../../common/enums/audit.enum';
 
 export class FilterAuditLogDto {
   @IsOptional()
