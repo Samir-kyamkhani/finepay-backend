@@ -1,5 +1,6 @@
+
 generator client {
-  provider      = "prisma-client-js"
+  provider      = "prisma-client"
   output        = "../generated/prisma"
   binaryTargets = ["native"]
 }
@@ -8,41 +9,69 @@ datasource db {
   provider = "postgresql"
 }
 
+// ==================== BUSINESS / TENANT SYSTEM ====================
+
+model Business {
+  id           String       @id @default(uuid())
+  businessId   String       @unique @map("business_id") @db.VarChar(8)
+  name         String
+  businessType BusinessType @map("business_type")
+  status       String       @default("ACTIVE")
+  createdBy    String // ROOT user id
+  createdAt    DateTime     @default(now())
+
+  users              User[]
+  roles              Role[]
+  departments        Department[]
+  ipWhitelists       IpWhitelist[]
+  wallets            Wallet[]
+  transactions       Transaction[]
+  ledgerEntries      LedgerEntry[]
+  commissionSettings CommissionSetting[]
+  auditLogs          AuditLog[]
+  employees          Employee[]
+  commissionEarnings CommissionEarning[]
+  businessKyc        BusinessKyc?
+
+  @@map("businesses")
+}
+
 // ==================== CORE USER SYSTEM ====================
 
 model User {
-  id                       String     @id @default(uuid())
-  customerId               String     @unique @map("customer_id") @db.VarChar(8)
-  firstName                String     @map("first_name")
-  lastName                 String     @map("last_name")
-  profileImage             String?    @map("profile_image") @db.Text
-  email                    String     @unique
-  phoneNumber              String     @unique @map("phone_number")
-  password                 String
-  transactionPin           String?    @map("transaction_pin")
-  hierarchyLevel           Int        @default(0) @map("hierarchy_level")
-  hierarchyPath            String     @map("hierarchy_path")
-  status                   UserStatus @default(INACTIVE)
-  isKycVerified            Boolean    @default(false) @map("is_kyc_verified")
-  roleId                   String     @map("role_id")
-  refreshToken             String?    @map("refresh_token") @db.Text
-  passwordResetToken       String?    @map("password_reset_token") @db.Text
-  passwordResetExpires     DateTime?  @map("password_reset_expires")
-  emailVerificationToken   String?    @map("email_verification_token")
-  emailVerifiedAt          DateTime?  @map("email_verified_at")
-  emailVerificationExpires DateTime?  @map("email_verification_token_expires")
-  lastLoginAt              DateTime?  @map("last_login_at")
-  lastLoginIp              String?    @map("last_login_ip") @db.Inet
-  lastLoginOrigin          String?    @map("last_login_origin")
-  actionReason             String?    @map("action_reason") @db.Text
-  actionedAt               DateTime   @map("actioned_at")
-  createdAt                DateTime   @default(now()) @map("created_at")
-  updatedAt                DateTime   @updatedAt @map("updated_at")
-  deletedAt                DateTime?  @map("deleted_at")
+  id             String     @id @default(uuid())
+  customerId     String     @unique @map("customer_id") @db.VarChar(8)
+  authUserId     String     @unique @map("auth_user_id")
+  firstName      String     @map("first_name")
+  lastName       String     @map("last_name")
+  profileImage   String?    @map("profile_image") @db.Text
+  email          String     @unique
+  phoneNumber    String     @unique @map("phone_number")
+  password       String
+  transactionPin String?    @map("transaction_pin")
+  hierarchyLevel Int        @default(0) @map("hierarchy_level")
+  hierarchyPath  String     @map("hierarchy_path")
+  status         UserStatus @default(INACTIVE)
+  isKycVerified  Boolean    @default(false) @map("is_kyc_verified")
+  roleId         String     @map("role_id")
 
-  // Relations
-  parentId      String? @map("parent_id")
-  businessKycId String? @map("business_kyc_id")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  lastLoginIp     String?   @map("last_login_ip") @db.Inet
+  lastLoginOrigin String?   @map("last_login_origin")
+  actionReason    String?   @map("action_reason") @db.Text
+  actionedAt      DateTime  @map("actioned_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  parentId      String?     @map("parent_id")
+  businessKycId String?     @map("business_kyc_id")
+  userType      CreatorType @default(USER) @map("user_type")
+
+  // Business boundary - NULL for ROOT users only
+  businessId String?   @map("business_id")
+  business   Business? @relation(fields: [businessId], references: [id])
 
   role     Role   @relation(fields: [roleId], references: [id])
   parent   User?  @relation("UserHierarchy", fields: [parentId], references: [id])
@@ -51,7 +80,7 @@ model User {
   wallets      Wallet[]
   bankDetails  BankDetail[]
   userKyc      UserKyc?
-  businessKyc  BusinessKyc?
+  businessKyc  BusinessKyc?  @relation(fields: [businessKycId], references: [id])
   transactions Transaction[]
 
   commissionEarnings CommissionEarning[] @relation("CommissionEarningToUser")
@@ -70,12 +99,17 @@ model User {
   serviceProvidersAssigned  ServiceProvider[]   @relation("ServiceProviderAssignedByUser")
   systemSettings            SystemSetting[]
 
-  permissionsAssigned   Permission[] @relation("PermissionAssignedToUser")
-  permissionsAssignedBy Permission[] @relation("PermissionAssignedByUser")
+  userKycVerified       UserKyc[]        @relation("UserKycVerifiedByUser")
+  businessKycVerified   BusinessKyc[]    @relation("BusinessKycVerifiedByUser")
+  apiIntegrations       ApiIntegration[]
+  userPermissions       UserPermission[]
+  businessKycsSubmitted BusinessKyc[]    @relation("BusinessKycSubmittedByUser")
 
-  userKycVerified     UserKyc[]        @relation("UserKycVerifiedByUser")
-  businessKycVerified BusinessKyc[]    @relation("BusinessKycVerifiedByUser")
-  apiIntegrations     ApiIntegration[]
+  name          String
+  emailVerified Boolean   @default(false)
+  image         String?
+  sessions      Session[]
+  accounts      Account[]
 
   @@index([parentId])
   @@index([hierarchyLevel])
@@ -86,84 +120,126 @@ model User {
   @@index([email])
   @@index([phoneNumber])
   @@index([deletedAt])
+  @@index([businessId])
   @@map("users")
 }
 
 model Employee {
-  id                   String         @id @default(uuid())
-  username             String         @unique
-  firstName            String         @map("first_name")
-  lastName             String         @map("last_name")
-  profileImage         String?        @map("profile_image") @db.Text
-  email                String         @unique
-  phoneNumber          String         @unique @map("phone_number")
-  password             String
-  departmentId         String         @map("department_id")
-  status               EmployeeStatus @default(ACTIVE)
-  refreshToken         String?        @map("refresh_token") @db.Text
-  passwordResetToken   String?        @map("password_reset_token") @db.Text
-  passwordResetExpires DateTime?      @map("password_reset_expires")
-  lastLoginAt          DateTime?      @map("last_login_at")
-  lastLoginIp          String?        @map("last_login_ip") @db.Inet
-  lastLoginOrigin      String?        @map("last_login_origin")
-  actionReason         String?        @map("action_reason") @db.Text
-  actionedAt           DateTime       @map("actioned_at")
-  createdById          String         @map("created_by_user_id")
-  createdAt            DateTime       @default(now()) @map("created_at")
-  updatedAt            DateTime       @updatedAt @map("updated_at")
+  id              String         @id @default(uuid())
+  authUserId      String         @unique @map("auth_user_id")
+  username        String         @unique
+  firstName       String         @map("first_name")
+  lastName        String         @map("last_name")
+  profileImage    String?        @map("profile_image") @db.Text
+  email           String         @unique
+  password        String
+  phoneNumber     String         @unique @map("phone_number")
+  departmentId    String         @map("department_id")
+  status          EmployeeStatus @default(INACTIVE)
+  lastLoginAt     DateTime?      @map("last_login_at")
+  lastLoginIp     String?        @map("last_login_ip") @db.Inet
+  lastLoginOrigin String?        @map("last_login_origin")
+  actionReason    String?        @map("action_reason") @db.Text
+  actionedAt      DateTime       @map("actioned_at")
+  createdById     String         @map("created_by_user_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
-  department          Department          @relation(fields: [departmentId], references: [id])
-  createdBy           User                @relation(fields: [createdById], references: [id])
-  permissions         Permission[]        @relation("PermissionAssignedToEmployee")
-  permissionsAssigned Permission[]        @relation("PermissionAssignedByEmployee")
-  commissionSettings  CommissionSetting[] @relation("CommissionSettingCreatedByEmployee")
-  businessKycVerified BusinessKyc[]       @relation("BusinessKycVerifiedByEmployee")
+  // Business boundary - REQUIRED for all employees
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
+  department          Department           @relation(fields: [departmentId], references: [id])
+  createdBy           User                 @relation(fields: [createdById], references: [id])
+  commissionSettings  CommissionSetting[]  @relation("CommissionSettingCreatedByEmployee")
+  businessKycVerified BusinessKyc[]        @relation("BusinessKycVerifiedByEmployee")
+  employeePermissions EmployeePermission[]
 
   @@index([departmentId])
   @@index([createdById])
   @@index([email])
   @@index([phoneNumber])
+  @@index([businessId])
   @@map("employees")
 }
 
-// ==================== PERMISSION SYSTEM ====================
+// ==================== SIMPLIFIED PERMISSION SYSTEM ====================
 
 model Permission {
-  id                   String               @id @default(uuid())
-  resource             String               @db.VarChar(200)
-  action               String               @db.VarChar(200)
-  description          String?              @db.Text
-  targetType           PermissionTargetType @map("target_type")
-  roleId               String?              @map("role_id")
-  userId               String?              @map("user_id")
-  departmentId         String?              @map("department_id")
-  employeeId           String?              @map("employee_id")
-  isActive             Boolean              @default(true) @map("is_active")
-  assignedAt           DateTime             @default(now()) @map("assigned_at")
-  revokedAt            DateTime?            @map("revoked_at")
-  assignedByType       CreatorType          @map("assigned_by_type")
-  assignedByUserId     String?              @map("assigned_by_user_id")
-  assignedByEmployeeId String?              @map("assigned_by_employee_id")
-  createdAt            DateTime             @default(now()) @map("created_at")
-  updatedAt            DateTime             @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  code        String   @unique @db.VarChar(100)
+  resource    String   @db.VarChar(200)
+  action      String   @db.VarChar(200)
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  role               Role?       @relation(fields: [roleId], references: [id])
-  user               User?       @relation("PermissionAssignedToUser", fields: [userId], references: [id])
-  department         Department? @relation(fields: [departmentId], references: [id])
-  employee           Employee?   @relation("PermissionAssignedToEmployee", fields: [employeeId], references: [id])
-  assignedByUser     User?       @relation("PermissionAssignedByUser", fields: [assignedByUserId], references: [id])
-  assignedByEmployee Employee?   @relation("PermissionAssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  rolePermissions       RolePermission[]
+  userPermissions       UserPermission[]
+  employeePermissions   EmployeePermission[]
+  departmentPermissions DepartmentPermission[]
 
-  @@unique([resource, action, targetType, roleId, userId, departmentId, employeeId])
-  @@index([resource, action])
-  @@index([targetType])
-  @@index([roleId])
-  @@index([userId])
-  @@index([departmentId])
-  @@index([employeeId])
-  @@index([isActive])
-  @@index([assignedByUserId])
+  @@unique([resource, action])
   @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserPermission {
+  userId       String
+  permissionId String
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  effect     PermissionEffect @default(ALLOW)
+  assignedAt DateTime         @default(now())
+
+  @@id([userId, permissionId])
+  @@index([permissionId])
+  @@map("user_permissions")
+}
+
+model EmployeePermission {
+  employeeId   String
+  permissionId String
+
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  effect     PermissionEffect @default(ALLOW)
+  assignedAt DateTime         @default(now())
+
+  @@id([employeeId, permissionId])
+  @@index([permissionId])
+  @@map("employee_permissions")
+}
+
+model DepartmentPermission {
+  departmentId String
+  permissionId String
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([departmentId, permissionId])
+  @@index([permissionId])
+  @@map("department_permissions")
 }
 
 // ==================== WALLET & TRANSACTION SYSTEM ====================
@@ -171,7 +247,7 @@ model Permission {
 model Wallet {
   id                  String     @id @default(uuid())
   userId              String     @map("user_id")
-  balance             Decimal    @default(0) @db.Decimal(20, 2) // Using Decimal for monetary values
+  balance             Decimal    @default(0) @db.Decimal(20, 2)
   currency            Currency   @default(INR)
   walletType          WalletType @default(PRIMARY) @map("wallet_type")
   holdBalance         Decimal    @default(0) @map("hold_balance") @db.Decimal(20, 2)
@@ -185,6 +261,10 @@ model Wallet {
   updatedAt           DateTime   @updatedAt @map("updated_at")
   deletedAt           DateTime?  @map("deleted_at")
 
+  // Business boundary - REQUIRED for all financial data
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
   user          User          @relation(fields: [userId], references: [id])
   ledgerEntries LedgerEntry[]
   transactions  Transaction[]
@@ -196,6 +276,7 @@ model Wallet {
   @@index([createdAt])
   @@index([balance])
   @@index([deletedAt])
+  @@index([businessId])
   @@map("wallets")
 }
 
@@ -226,6 +307,10 @@ model Transaction {
   processedAt       DateTime?         @map("processed_at")
   completedAt       DateTime?         @map("completed_at")
 
+  // Business boundary - REQUIRED for all financial data
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
   user               User                @relation(fields: [userId], references: [id])
   wallet             Wallet              @relation(fields: [walletId], references: [id])
   apiEntity          ApiEntity?          @relation(fields: [apiEntityId], references: [id])
@@ -246,9 +331,9 @@ model Transaction {
   @@index([completedAt])
   @@index([externalRefId])
   @@index([providerReference])
-  // PostgreSQL-specific composite indexes for common queries
   @@index([userId, status, initiatedAt])
   @@index([walletId, status, initiatedAt])
+  @@index([businessId])
   @@map("transactions")
 }
 
@@ -271,6 +356,10 @@ model CommissionEarning {
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
+  // Business boundary - REQUIRED for all financial data
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
   transaction Transaction @relation(fields: [transactionId], references: [id])
   user        User        @relation("CommissionEarningToUser", fields: [userId], references: [id])
   fromUser    User?       @relation("CommissionEarningFromUser", fields: [fromUserId], references: [id])
@@ -281,8 +370,8 @@ model CommissionEarning {
   @@index([status, createdAt])
   @@index([processedAt])
   @@index([cancelledAt])
-  // Composite index for common reporting queries
   @@index([userId, status, createdAt])
+  @@index([businessId])
   @@map("commission_earnings")
 }
 
@@ -304,7 +393,7 @@ model BankDetail {
 
   user User @relation(fields: [userId], references: [id])
 
-  @@unique([userId, isPrimary]) // Partial unique index
+  @@unique([userId, isPrimary])
   @@index([userId])
   @@index([status])
   @@index([isPrimary])
@@ -327,6 +416,10 @@ model LedgerEntry {
   idempotencyKey String          @unique @map("idempotency_key") @db.VarChar(255)
   createdAt      DateTime        @default(now()) @map("created_at")
 
+  // Business boundary - REQUIRED for all financial data
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
   service     ServiceProvider? @relation(fields: [serviceId], references: [id])
   transaction Transaction?     @relation(fields: [transactionId], references: [id])
   wallet      Wallet           @relation(fields: [walletId], references: [id])
@@ -339,6 +432,7 @@ model LedgerEntry {
   @@index([createdAt])
   @@index([walletId, entryType, createdAt])
   @@index([walletId, runningBalance])
+  @@index([businessId])
   @@map("ledger_entries")
 }
 
@@ -377,6 +471,10 @@ model CommissionSetting {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Business boundary - REQUIRED for business settings
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
   role              Role?            @relation(fields: [roleId], references: [id])
   targetUser        User?            @relation("CommissionSettingForUser", fields: [targetUserId], references: [id])
   service           ServiceProvider? @relation(fields: [serviceId], references: [id])
@@ -387,10 +485,12 @@ model CommissionSetting {
   @@index([serviceId, isActive])
   @@index([createdByType, createdByUserId, createdByEmployeeId])
   @@index([effectiveFrom, effectiveTo])
-  // Partial index for active settings
   @@index([scope, roleId, targetUserId, serviceId])
+  @@index([businessId])
   @@map("commission_settings")
 }
+
+// ==================== ROLE & DEPARTMENT ====================
 
 model Role {
   id          String  @id @default(uuid())
@@ -403,14 +503,17 @@ model Role {
   hierarchyPath  String  @map("hierarchy_path") @db.Text
 
   // Status and metadata
-  isRoot        Boolean @default(false) @map("is_root")
-  permissions   Json?   @db.Json // Cache of computed permissions
+  permissions   Json?   @db.Json
   isIpWhitelist Boolean @default(false) @map("is_ipwhitelist")
 
   createdByType   CreatorType @map("created_by_type")
   createdByUserId String?     @map("created_by_user_id")
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  // Business boundary - NULL for system roles only
+  businessId String?   @map("business_id")
+  business   Business? @relation(fields: [businessId], references: [id])
 
   // Relations
   parent   Role?  @relation("RoleHierarchy", fields: [parentId], references: [id])
@@ -419,15 +522,15 @@ model Role {
   users              User[]
   commissionSettings CommissionSetting[]
   createdByUser      User?               @relation("RoleCreatedByUser", fields: [createdByUserId], references: [id])
-  rolePermissions    Permission[]
+  rolePermissions    RolePermission[]
 
   @@index([parentId])
   @@index([hierarchyLevel])
   @@index([hierarchyPath])
-  @@index([isRoot])
   @@index([createdByUserId, createdByType])
   @@index([name])
   @@index([hierarchyLevel, hierarchyPath])
+  @@index([businessId])
   @@map("roles")
 }
 
@@ -440,12 +543,17 @@ model Department {
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
-  employees     Employee[]
-  createdByUser User?        @relation("DepartmentCreatedByUser", fields: [createdByUserId], references: [id])
-  permissions   Permission[]
+  // Business boundary - REQUIRED for all departments
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
+  employees             Employee[]
+  createdByUser         User?                  @relation("DepartmentCreatedByUser", fields: [createdByUserId], references: [id])
+  departmentPermissions DepartmentPermission[]
 
   @@index([createdByUserId, createdByType])
   @@index([name])
+  @@index([businessId])
   @@map("departments")
 }
 
@@ -546,42 +654,47 @@ model UserKyc {
 }
 
 model BusinessKyc {
-  id                    String       @id @default(uuid())
-  userId                String       @map("user_id")
-  businessName          String       @map("business_name") @db.VarChar(200)
-  businessType          BusinessType @map("business_type")
-  status                KycStatus    @default(PENDING)
-  rejectionReason       String?      @map("rejection_reason") @db.Text
-  addressId             String       @map("address_id")
-  panFile               String       @map("pan_file") @db.VarChar(500)
-  gstFile               String       @map("gst_file") @db.VarChar(500)
-  brDoc                 String?      @map("br_doc") @db.VarChar(500)
-  partnershipDeed       String?      @map("partnership_deed") @db.VarChar(500)
-  partnerKycNumbers     Int?         @map("partner_kyc_numbers")
-  cin                   String?      @map("cin") @db.VarChar(25)
-  moaFile               String?      @map("moa_file") @db.VarChar(500)
-  aoaFile               String?      @map("aoa_file") @db.VarChar(500)
-  authorizedMemberCount Int          @map("authorized_member_count")
-  directorShareholding  String?      @map("director_shareholding_file") @db.VarChar(500)
-  verifiedByType        String?      @map("verified_by_type")
-  verifiedByUserId      String?      @map("verified_by_user_id")
-  verifiedByEmployeeId  String?      @map("verified_by_employee_id")
-  verifiedAt            DateTime?    @map("verified_at")
-  createdAt             DateTime     @default(now()) @map("created_at")
-  updatedAt             DateTime     @updatedAt @map("updated_at")
+  id      String    @id @default(uuid())
+  status  KycStatus @default(PENDING)
+  panFile String
+  gstFile String?
+  cin     String?
+  moaFile String?
+  aoaFile String?
 
-  user               User         @relation(fields: [userId], references: [id])
-  address            Address      @relation(fields: [addressId], references: [id])
-  userKycs           UserKyc[]
-  piiConsents        PiiConsent[]
-  verifiedByUser     User?        @relation("BusinessKycVerifiedByUser", fields: [verifiedByUserId], references: [id])
-  verifiedByEmployee Employee?    @relation("BusinessKycVerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
+  rejectionReason String?
+  verifiedByType  CreatorType?
+  verifiedAt      DateTime?
 
-  @@unique([userId])
-  @@index([userId, status])
-  @@index([verifiedByUserId, verifiedByEmployeeId])
-  @@index([businessType])
-  @@index([addressId])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  businessId String   @unique
+  business   Business @relation(fields: [businessId], references: [id])
+
+  addressId String
+  address   Address @relation(fields: [addressId], references: [id])
+
+  // ✅ This is a MANY-TO-ONE relationship, not one-to-one
+  submittedByUserId String
+  submittedByUser   User   @relation("BusinessKycSubmittedByUser", fields: [submittedByUserId], references: [id])
+
+  // ✅ These are optional one-to-many relationships
+  verifiedByUserId String?
+  verifiedByUser   User?   @relation("BusinessKycVerifiedByUser", fields: [verifiedByUserId], references: [id])
+
+  verifiedByEmployeeId String?
+  verifiedByEmployee   Employee? @relation("BusinessKycVerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
+
+  userKycs    UserKyc[]
+  piiConsents PiiConsent[]
+  users       User[]
+
+  @@index([status])
+  @@index([businessId])
+  @@index([submittedByUserId])
+  @@index([verifiedByUserId])
+  @@index([verifiedByEmployeeId])
   @@map("business_kycs")
 }
 
@@ -697,18 +810,31 @@ model ApiWebhook {
 // ==================== SECURITY & SETTINGS ====================
 
 model IpWhitelist {
-  id         String   @id @default(uuid())
-  domainName String   @unique @map("domain_name") @db.VarChar(255)
-  serverIp   String   @map("server_ip") @db.Inet // Using INET type for IP addresses
-  userId     String?  @map("user_id")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id         String @id @default(uuid())
+  domainName String @unique @map("domain_name") @db.VarChar(255)
+  serverIp   String @map("server_ip") @db.Inet
+
+  // Business boundary - REQUIRED for business security
+  businessId String   @map("business_id")
+  business   Business @relation(fields: [businessId], references: [id])
+
+  // Optional for backward compatibility
+  userId String? @map("user_id")
+
+  ipAddress String? @map("ip_address") @db.Inet
+  cidrRange String? @map("cidr_range") @db.VarChar(18)
+  isActive  Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user User? @relation(fields: [userId], references: [id])
 
   @@index([domainName])
   @@index([userId])
   @@index([serverIp])
+  @@index([businessId])
+  @@index([isActive])
   @@map("ip_whitelists")
 }
 
@@ -799,22 +925,27 @@ model IdempotencyKey {
 // ==================== AUDIT SYSTEM ====================
 
 model AuditLog {
-  id             String      @id @default(uuid())
-  performerType  String      @map("performer_type")
-  performerId    String      @map("performer_id")
-  targetUserType String      @map("target_user_type")
-  targetUserId   String      @map("target_user_id")
-  action         String      @db.VarChar(100)
-  description    String      @db.Text
-  resourceType   String      @map("resource_type") @db.VarChar(50)
-  resourceId     String      @map("resource_id")
-  oldData        Json?       @map("old_data") @db.Json
-  newData        Json?       @map("new_data") @db.Json
-  status         AuditStatus
-  ipAddress      String?     @map("ip_address") @db.Inet // Using INET type
-  userAgent      String?     @map("user_agent") @db.Text
-  metadata       Json?       @db.Json
-  createdAt      DateTime    @default(now()) @map("created_at")
+  id             String @id @default(uuid())
+  performerType  String @map("performer_type")
+  performerId    String @map("performer_id")
+  targetUserType String @map("target_user_type")
+  targetUserId   String @map("target_user_id")
+  action         String @db.VarChar(100)
+  description    String @db.Text
+  resourceType   String @map("resource_type") @db.VarChar(50)
+  resourceId     String @map("resource_id")
+
+  // Business boundary - NULL for system actions
+  businessId String?   @map("business_id")
+  business   Business? @relation(fields: [businessId], references: [id])
+
+  oldData   Json?       @map("old_data") @db.Json
+  newData   Json?       @map("new_data") @db.Json
+  status    AuditStatus
+  ipAddress String?     @map("ip_address") @db.Inet
+  userAgent String?     @map("user_agent") @db.Text
+  metadata  Json?       @db.Json
+  createdAt DateTime    @default(now()) @map("created_at")
 
   @@index([performerType, performerId])
   @@index([targetUserType, targetUserId])
@@ -822,10 +953,11 @@ model AuditLog {
   @@index([status, createdAt])
   @@index([action, createdAt])
   @@index([createdAt])
+  @@index([businessId])
   @@map("audit_logs")
 }
 
-// ==================== ENUMS (Unchanged) ====================
+// ==================== ENUMS ====================
 
 enum UserStatus {
   ACTIVE
@@ -841,6 +973,7 @@ enum EmployeeStatus {
 }
 
 enum CreatorType {
+  ROOT
   USER
   EMPLOYEE
 }
@@ -1032,9 +1165,55 @@ enum AuditStatus {
   PENDING
 }
 
-enum PermissionTargetType {
-  ROLE
-  USER
-  DEPARTMENT
-  EMPLOYEE
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
