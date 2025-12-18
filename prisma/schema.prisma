@@ -530,11 +530,11 @@ model Role {
   createdByUser      User?               @relation("RoleCreatedByUser", fields: [createdByUserId], references: [id])
   rolePermissions    RolePermission[]
 
+  @@unique([name, businessId])
   @@index([parentId])
   @@index([hierarchyLevel])
   @@index([hierarchyPath])
   @@index([createdByUserId, createdByType])
-  @@index([name])
   @@index([hierarchyLevel, hierarchyPath])
   @@index([businessId])
   @@map("roles")
@@ -557,8 +557,8 @@ model Department {
   createdByUser         User?                  @relation("DepartmentCreatedByUser", fields: [createdByUserId], references: [id])
   departmentPermissions DepartmentPermission[]
 
+  @@unique([name, businessId])
   @@index([createdByUserId, createdByType])
-  @@index([name])
   @@index([businessId])
   @@map("departments")
 }

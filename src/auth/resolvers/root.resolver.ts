@@ -1,4 +1,3 @@
-// src/auth/resolvers/root-auth.resolver.ts
 import {
   BadRequestException,
   Injectable,
@@ -7,40 +6,41 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../database/prisma-service';
+import { ForgotPasswordDto } from '../dto/forgot-password-auth.dto';
+import { ConfirmPasswordResetDto } from '../dto/confirm-password-reset-auth.dto';
+import { UpdateCredentialsDto } from '../dto/update-credentials-auth.dto';
+import { UpdateProfileDto } from '../dto/update-profile-auth.dto';
+import { AuthActor } from '../../common/types/auth.type';
+import { AuthUtilsService } from '../../common/utils/auth.utils';
+import { randomBytes } from 'node:crypto';
+import { LoginDto } from '../dto/login-auth.dto';
 import type { Request } from 'express';
-import { AuthUtilsService } from 'src/common/utils/auth.utils';
-import { S3Service } from 'src/common/utils/s3.service';
-import { PrismaService } from 'src/database/prisma-service';
-import { EmailService } from 'src/email/email.service';
+import { AuditStatus } from '../../common/enums/audit.enum';
+import { S3Service } from '../../common/utils/s3.service';
+import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../../email/email.service';
+import { Prisma } from '../../../generated/prisma/client';
+import { FileDeleteHelper } from '../../common/utils/file.delete.utils';
 
 @Injectable()
-export class RootAuthResolver {
-  private logger = new Logger(RootAuthResolver.name);
+export class RootResolver {
+  private logger = new Logger(RootResolver.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly authUtils: AuthUtilsService,
-    private readonly tokenService: TokenService,
     private readonly emailService: EmailService,
     private readonly s3: S3Service,
     private readonly configService: ConfigService,
   ) {}
 
-  private toSafeRoot(root: any) {
-    return this.authUtils.stripSensitive(root, [
-      'password',
-      'refreshToken',
-      'passwordResetToken',
-    ]);
-  }
-
   private async logAuthEvent(params: {
     performerId: string | null;
     action: string;
-    status: string;
+    status: AuditStatus;
     req?: Request;
-    metadata?: any;
+    metadata?: Prisma.InputJsonValue;
   }) {
     const { performerId, action, status, metadata, req } = params;
 
@@ -55,7 +55,7 @@ export class RootAuthResolver {
     });
   }
 
-  async login(dto: LoginDto, req: Request): Promise<any> {
+  async login(dto: LoginDto, req: Request) {
     const root = await this.prisma.root.findFirst({
       where: { email: dto.email },
       include: {
@@ -70,25 +70,26 @@ export class RootAuthResolver {
       await this.logAuthEvent({
         performerId: root?.id ?? null,
         action: 'LOGIN_FAILED',
-        status: 'FAILED',
+        status: AuditStatus.FAILED,
         req,
         metadata: { reason: 'USER_NOT_FOUND_OR_INACTIVE', email: dto.email },
       });
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // 🔥 Password verify
     if (!this.authUtils.verifyPassword(dto.password, root.password)) {
       await this.logAuthEvent({
         performerId: root.id,
         action: 'LOGIN_FAILED',
-        status: 'FAILED',
+        status: AuditStatus.FAILED,
         req,
         metadata: { reason: 'INVALID_PASSWORD', email: dto.email },
       });
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // ROOT users have no IP whitelist restrictions
+    // 🔥 Actor + tokens
     const actor: AuthActor = this.authUtils.createActor({
       id: root.id,
       roleId: root.roleId,
@@ -96,7 +97,9 @@ export class RootAuthResolver {
       isRoot: true,
     });
 
-    const tokens = this.tokenService.generateTokens(actor);
+    const tokens = this.authUtils.generateTokens(actor);
+
+    // 🔐 Refresh token should be hashed before saving!
     const hashedRefresh = this.authUtils.hashPassword(tokens.refreshToken);
 
     await this.prisma.root.update({
@@ -112,20 +115,40 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: root.id,
       action: 'LOGIN_SUCCESS',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
       metadata: { origin },
     });
 
     return {
-      user: this.toSafeRoot(root),
+      user: this.authUtils.stripSensitive(root, [
+        'password',
+        'refreshToken',
+        'passwordResetToken',
+      ]),
       actor,
       tokens,
     };
   }
 
-  async refreshToken(rawToken: string, req: Request): Promise<any> {
-    const payload = this.tokenService.verifyRefreshToken(rawToken);
+  async logout(rootId: string, req: Request) {
+    await this.prisma.root.update({
+      where: { id: rootId },
+      data: { refreshToken: null },
+    });
+
+    await this.logAuthEvent({
+      performerId: rootId,
+      action: 'LOGOUT',
+      status: AuditStatus.SUCCESS,
+      req,
+    });
+
+    return { message: 'Logged out successfully' };
+  }
+
+  async refreshToken(rawToken: string, req: Request) {
+    const payload = this.authUtils.verifyJwt(rawToken);
 
     if (!payload || payload.principalType !== 'ROOT') {
       throw new UnauthorizedException('Invalid token');
@@ -139,7 +162,7 @@ export class RootAuthResolver {
       await this.logAuthEvent({
         performerId: payload.sub,
         action: 'REFRESH_TOKEN_INVALID',
-        status: 'FAILED',
+        status: AuditStatus.FAILED,
         req,
       });
 
@@ -153,7 +176,8 @@ export class RootAuthResolver {
       isRoot: true,
     });
 
-    const tokens = this.tokenService.generateTokens(actor);
+    const tokens = this.authUtils.generateTokens(actor);
+
     const hashedRefresh = this.authUtils.hashPassword(tokens.refreshToken);
 
     await this.prisma.root.update({
@@ -164,36 +188,26 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: root.id,
       action: 'REFRESH_TOKEN_SUCCESS',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
     });
 
     return {
-      user: this.toSafeRoot(root),
+      user: this.authUtils.stripSensitive(root, [
+        'password',
+        'refreshToken',
+        'passwordResetToken',
+      ]),
       actor,
       tokens,
     };
-  }
-
-  async logout(rootId: string, req?: Request): Promise<void> {
-    await this.prisma.root.update({
-      where: { id: rootId },
-      data: { refreshToken: null },
-    });
-
-    await this.logAuthEvent({
-      performerId: rootId,
-      action: 'LOGOUT',
-      status: 'SUCCESS',
-      req,
-    });
   }
 
   async requestPasswordReset(
     dto: ForgotPasswordDto,
     currentUser: AuthActor,
     req?: Request,
-  ): Promise<any> {
+  ) {
     const authenticatedUser = await this.prisma.root.findUnique({
       where: { id: currentUser.id },
     });
@@ -206,7 +220,7 @@ export class RootAuthResolver {
       await this.logAuthEvent({
         performerId: currentUser.id,
         action: 'PASSWORD_RESET_REQUEST_FAILED',
-        status: 'FAILED',
+        status: AuditStatus.FAILED,
         metadata: {
           details: `Attempted to reset password for email: ${dto.email}`,
         },
@@ -245,7 +259,7 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: root.id,
       action: 'PASSWORD_RESET_REQUESTED',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
     });
 
@@ -256,7 +270,7 @@ export class RootAuthResolver {
     dto: ConfirmPasswordResetDto,
     currentUser?: AuthActor,
     req?: Request,
-  ): Promise<any> {
+  ) {
     const hashedToken = this.authUtils.hashResetToken(dto.token);
 
     const root = await this.prisma.root.findFirst({
@@ -270,7 +284,7 @@ export class RootAuthResolver {
       await this.logAuthEvent({
         performerId: null,
         action: 'PASSWORD_RESET_FAILED',
-        status: 'FAILED',
+        status: AuditStatus.FAILED,
         req,
       });
       throw new BadRequestException('Invalid or expired token');
@@ -304,14 +318,14 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: root.id,
       action: 'PASSWORD_RESET_CONFIRMED',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
     });
 
     return { message: 'Password reset successful. New password sent.' };
   }
 
-  async getCurrentUser(rootId: string): Promise<any> {
+  async getCurrentUser(rootId: string) {
     const root = await this.prisma.root.findUnique({
       where: { id: rootId },
       include: { role: true },
@@ -319,10 +333,14 @@ export class RootAuthResolver {
 
     if (!root) throw new NotFoundException('Root user not found');
 
-    return this.toSafeRoot(root);
+    return this.authUtils.stripSensitive(root, [
+      'password',
+      'refreshToken',
+      'passwordResetToken',
+    ]);
   }
 
-  async getDashboard(rootId: string, req?: Request): Promise<any> {
+  async getDashboard(rootId: string, req?: Request) {
     const [admins, users, employees] = await Promise.all([
       this.prisma.user.count({
         where: { rootParentId: rootId, role: { name: 'ADMIN' } },
@@ -338,7 +356,7 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: rootId,
       action: 'DASHBOARD_ACCESSED',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
     });
 
@@ -353,7 +371,7 @@ export class RootAuthResolver {
     rootId: string,
     dto: UpdateCredentialsDto,
     req?: Request,
-  ): Promise<any> {
+  ) {
     const root = await this.prisma.root.findUnique({
       where: { id: rootId },
     });
@@ -374,14 +392,14 @@ export class RootAuthResolver {
       where: { id: root.id },
       data: {
         password: newHashed,
-        refreshToken: null,
+        refreshToken: null, // logout from all devices
       },
     });
 
     await this.logAuthEvent({
       performerId: rootId,
       action: 'CREDENTIALS_UPDATED',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
       metadata: { updatedFields: ['password'] },
     });
@@ -389,11 +407,7 @@ export class RootAuthResolver {
     return { message: 'Credentials updated successfully' };
   }
 
-  async updateProfile(
-    rootId: string,
-    dto: UpdateProfileDto,
-    req?: Request,
-  ): Promise<any> {
+  async updateProfile(rootId: string, dto: UpdateProfileDto, req?: Request) {
     const root = await this.prisma.root.findUnique({
       where: { id: rootId },
     });
@@ -413,7 +427,7 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: rootId,
       action: 'PROFILE_UPDATED',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
       metadata: { updatedFields: Object.keys(data) },
     });
@@ -425,7 +439,7 @@ export class RootAuthResolver {
     rootId: string,
     file: Express.Multer.File,
     req?: Request,
-  ): Promise<any> {
+  ) {
     if (!file) throw new BadRequestException('Profile image required');
 
     const root = await this.prisma.root.findUnique({
@@ -454,7 +468,7 @@ export class RootAuthResolver {
     await this.logAuthEvent({
       performerId: rootId,
       action: 'PROFILE_IMAGE_UPDATED',
-      status: 'SUCCESS',
+      status: AuditStatus.SUCCESS,
       req,
       metadata: { oldImageDeleted: !!oldImage },
     });

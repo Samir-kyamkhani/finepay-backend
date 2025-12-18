@@ -1,12 +1,14 @@
 import {
   IsEmail,
   IsEnum,
-  IsNumber,
+  IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { CreatorType } from '../../../generated/prisma/enums';
 
 export class LoginDto {
   @IsEmail()
@@ -14,27 +16,66 @@ export class LoginDto {
   @MaxLength(255)
   email: string;
 
-  @IsNumber()
-  @IsOptional()
-  customerId?: string;
-
   @IsString()
   @MinLength(1)
   @MaxLength(255)
   password: string;
 
-  @IsEnum(['ROOT', 'USER', 'EMPLOYEE'])
-  actorType: 'ROOT' | 'USER' | 'EMPLOYEE';
+  @IsEnum(['USER', 'EMPLOYEE'])
+  actorType: 'USER' | 'EMPLOYEE';
 
-  @IsNumber()
   @IsOptional()
   latitude?: number;
 
-  @IsNumber()
   @IsOptional()
   longitude?: number;
 
-  @IsNumber()
   @IsOptional()
   accuracy?: number;
+}
+
+export class SignupDto {
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  @IsNotEmpty()
+  password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  firstName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  lastName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  phoneNumber: string;
+
+  @IsString()
+  @IsOptional()
+  parentId?: string;
+
+  @IsString()
+  @IsOptional()
+  businessId?: string;
+
+  @IsEnum(CreatorType)
+  @IsOptional()
+  userType?: CreatorType = CreatorType.USER;
+
+  @IsString()
+  @IsOptional()
+  roleId?: string;
+
+  @IsString()
+  @Matches(/^\d{4,6}$/, {
+    message: 'Transaction PIN must be 4-6 digits',
+  })
+  @IsOptional()
+  transactionPin?: string;
 }
