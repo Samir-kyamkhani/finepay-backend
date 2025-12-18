@@ -1,43 +1,82 @@
-import { Injectable } from '@nestjs/common';
-import nodemailer, { Transporter } from 'nodemailer';
-import EmailTemplates from './email-templates';
 import {
-  EmployeeCredentialsOptions,
+  Injectable,
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import * as nodemailer from 'nodemailer';
+import { CryptoService } from '../common/utils/crypto.utils';
+import { SmtpConfigService } from '../smtp-config/smtp-config.service';
+import {
   BusinessUserCredentialsOptions,
-  RootUserCredentialsOptions,
-  PasswordResetOptions,
   EmailVerificationOptions,
-} from '../interface/auth.interface';
-import { ConfigService } from '@nestjs/config';
+  EmployeeCredentialsOptions,
+  PasswordResetOptions,
+  RootUserCredentialsOptions,
+} from '../common/types/email.type';
+import EmailTemplates from './templates/auth-email-templates';
 
 @Injectable()
 export class EmailService {
-  private transporter: Transporter;
-  private fromEmail: string;
+  constructor(
+    private readonly smtpConfigService: SmtpConfigService,
+    private readonly cryptoService: CryptoService,
+  ) {}
 
-  constructor(private config: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: this.config.get<string>('smtp.host'),
-      port: this.config.get<number>('smtp.port'),
-      secure: false,
-      auth: {
-        user: this.config.get<string>('smtp.user'),
-        pass: this.config.get<string>('smtp.pass'),
-      },
-    });
-
-    this.fromEmail = this.config.get<string>('smtp.fromEmail')!;
+  // ================= GET SUPPORT EMAIL =================
+  async getSupportEmail(userId: string) {
+    try {
+      return await this.smtpConfigService.getSupportEmail(userId);
+    } catch (err) {
+      const error = err as Error;
+      throw new InternalServerErrorException(
+        'Failed to get support email in email file',
+        error.message,
+      );
+    }
   }
 
-  // GENERIC SEND EMAIL FUNCTION
-  sendEmail(to: string, subject: string, text: string, html: string) {
-    return this.transporter.sendMail({
-      from: this.fromEmail,
-      to,
-      subject,
-      text,
-      html,
-    });
+  // ================= SEND MAIL USING USER'S SMTP =================
+  async sendMail(
+    senderUserId: string,
+    to: string | string[],
+    subject: string,
+    html: string,
+    text?: string,
+  ): Promise<nodemailer.SentMessageInfo> {
+    try {
+      const smtp = await this.smtpConfigService.resolveSmtpConfig(senderUserId);
+
+      const transporter = nodemailer.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: {
+          user: smtp.username,
+          pass: this.cryptoService.decrypt(smtp.passwordEnc),
+        },
+      });
+
+      const mailOptions = {
+        from: `"${smtp.fromName || 'Platform'}" <${smtp.fromEmail}>`,
+        to: Array.isArray(to) ? to.join(', ') : to,
+        subject,
+        html,
+        text: text || this.stripHtml(html),
+      };
+
+      return await transporter.sendMail(mailOptions);
+    } catch (err) {
+      const error = err as Error;
+      if (error.message.includes('not found')) {
+        throw new BadRequestException('No active SMTP configuration found');
+      }
+      throw new InternalServerErrorException('Failed to send email');
+    }
+  }
+
+  // ================= PRIVATE HELPERS =================
+  private stripHtml(html: string): string {
+    return html.replace(/<[^>]*>/g, '');
   }
 
   // EMPLOYEE CREDENTIALS EMAIL

@@ -16,6 +16,7 @@ import { CommissionsModule } from './commissions/commissions.module';
 import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
 import { EmailModule } from './email/email.module';
+import { SmtpConfigModule } from './smtp-config/smtp-config.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { EmailModule } from './email/email.module';
     TransactionsModule,
     CommissionsModule,
     EmailModule,
+    SmtpConfigModule,
   ],
   controllers: [HealthController],
   providers: [HealthService],
