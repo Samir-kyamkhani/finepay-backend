@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { CommissionsService } from './commissions.service';
+import { CommissionsService } from './services/commissions.service';
 import { CommissionsController } from './commissions.controller';
 
 @Module({

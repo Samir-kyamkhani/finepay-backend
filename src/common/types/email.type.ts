@@ -1,3 +1,5 @@
+import { UserKycStatus } from '../../../generated/prisma';
+
 export interface BaseUserOptions {
   firstName: string;
   username?: string;
@@ -38,4 +40,12 @@ export interface EmailTemplateResult {
   subject: string;
   html: string;
   text: string;
+}
+
+export interface UserKycStatusOptions {
+  firstName: string;
+  kycId: string;
+  status: UserKycStatus;
+  reason?: string;
+  supportEmail?: string;
 }

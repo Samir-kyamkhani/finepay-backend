@@ -9,11 +9,16 @@ import { SmtpConfigService } from '../smtp-config/smtp-config.service';
 import {
   BusinessUserCredentialsOptions,
   EmailVerificationOptions,
+<<<<<<< HEAD
   EmployeeCredentialsOptions,
   PasswordResetOptions,
   RootUserCredentialsOptions,
 } from '../common/types/email.type';
 import EmailTemplates from './templates/auth-email-templates';
+=======
+} from '../common/types/email.type';
+import { ConfigService } from '@nestjs/config';
+>>>>>>> 64a3bc47937e8ef376711e7b865e4127fd3d788a
 
 @Injectable()
 export class EmailService {
