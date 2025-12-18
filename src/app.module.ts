@@ -1,3 +1,4 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
 import { AclModule } from './acl/acl.module';
@@ -16,9 +17,16 @@ import { CommissionsModule } from './commissions/commissions.module';
 import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
 import { EmailModule } from './email/email.module';
+import { PrismaModule } from './database/prisma.module';
 
 @Module({
   imports: [
+    CacheModule.register({
+      ttl: 5 * 60,
+      isGlobal: true,
+    }),
+
+    PrismaModule,
     AuthModule,
     AclModule,
     RootsModule,

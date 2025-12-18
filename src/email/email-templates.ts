@@ -5,7 +5,7 @@ import type {
   EmployeeCredentialsOptions,
   PasswordResetOptions,
   RootUserCredentialsOptions,
-} from '../interface/auth.interface';
+} from '../common/types/email.type';
 
 class EmailTemplates {
   static generateEmployeeCredentialsTemplate(

@@ -13,10 +13,7 @@ import {
 import type { Request } from 'express';
 
 import { ConfigService } from '@nestjs/config';
-import { AuthActor, JwtPayload, PrincipalType } from '../types/auth.type';
-import { AuditStatus } from '../enums/audit.enum';
-import { AuditService } from 'src/audit/service/audit.service';
-import { Prisma } from 'generated/prisma/client';
+import { JwtPayload } from '../types/auth.type';
 
 @Injectable()
 export class AuthUtilsService {
@@ -29,7 +26,6 @@ export class AuthUtilsService {
 
   constructor(
     private readonly jwt: JwtService,
-    private readonly auditService: AuditService,
     private readonly configService: ConfigService,
   ) {
     const key = this.configService.get<string>('security.authKeySecret');
@@ -147,47 +143,11 @@ export class AuthUtilsService {
     return createHmac('sha256', secret).update(token).digest('hex');
   }
 
-  createActor(params: {
-    id: string;
-    principalType: PrincipalType;
-    roleId?: string | null;
-    isRoot?: boolean;
-    parentId: string;
-  }): AuthActor {
-    return {
-      id: params.id,
-      principalType: params.principalType,
-      isRoot: params.isRoot ?? false,
-      roleId: params.roleId ?? null,
-      parentId: params.parentId,
-    };
-  }
-
-  generateTokens(actor: AuthActor) {
-    const payload: JwtPayload = {
-      sub: actor.id,
-      principalType: actor.principalType,
-      roleId: actor.roleId,
-      isRoot: actor.isRoot,
-    };
-
+  generateTokens(payload: JwtPayload) {
     return {
       accessToken: this.jwt.sign(payload, { expiresIn: '1h' }),
       refreshToken: this.jwt.sign(payload, { expiresIn: '30d' }),
     };
-  }
-
-  verifyJwt(token: string): JwtPayload | null {
-    try {
-      return this.jwt.verify<JwtPayload>(token);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        this.logger.warn(`JWT verification failed: ${err.message}`);
-      } else {
-        this.logger.warn('JWT verification failed: unknown error');
-      }
-      return null;
-    }
   }
 
   stripSensitive<T extends object>(obj: T, fields: readonly (keyof T)[]): T {
@@ -336,51 +296,14 @@ export class AuthUtilsService {
     );
   }
 
-  async createAuthAuditLog(params: {
-    performerType: PrincipalType;
-    performerId: string | null;
-    action: string;
-    status: AuditStatus;
-    description?: string;
-    targetUserType?: string | null;
-    targetUserId?: string | null;
-    resourceType?: string;
-    resourceId?: string | null;
-    ipAddress?: string | null;
-    userAgent?: string | null;
-    metadata?: Prisma.InputJsonValue;
-  }) {
-    try {
-      await this.auditService.create({
-        performerType: params.performerType,
-        performerId: params.performerId || '',
-        targetUserType: params.targetUserType ?? params.performerType,
-        targetUserId: params.targetUserId ?? params.performerId ?? '',
-        action: params.action,
-        description:
-          params.description ??
-          `${params.performerType} performed ${params.action}`,
-        resourceType: params.resourceType ?? 'AUTH',
-        resourceId: params.resourceId ?? params.performerId ?? '',
-        status: params.status,
-        ipAddress: params.ipAddress ?? undefined,
-        userAgent: params.userAgent ?? undefined,
-        metadata: params.metadata ?? {},
-      });
-    } catch (err) {
-      this.logger.error(
-        `Audit log failure: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-  }
-
   // Converts paise(BigInt) -> rupees -> string   (SAFE)
-  money = (value?: bigint | number | null): string => {
+  money(value?: bigint | number | null): string {
     if (value === null || value === undefined) return '0';
 
-    const num = typeof value === 'bigint' ? Number(value) : value;
+    if (typeof value === 'bigint') {
+      return (value / 100n).toString();
+    }
 
-    // convert paise → rupees
-    return (num / 100).toString();
-  };
+    return (value / 100).toString();
+  }
 }

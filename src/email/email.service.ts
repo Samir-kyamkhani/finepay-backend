@@ -7,7 +7,7 @@ import {
   RootUserCredentialsOptions,
   PasswordResetOptions,
   EmailVerificationOptions,
-} from '../interface/auth.interface';
+} from '../common/types/email.type';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
